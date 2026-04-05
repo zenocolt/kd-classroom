@@ -11,8 +11,11 @@ const DEFAULT_BRAND_SUBTITLE = 'วิทยาลัยเทคนิคจั
 const DEFAULT_PRIMARY_COLOR = '#C94C00';
 const PRESET_COLORS = ['#C94C00', '#0F766E', '#1D4ED8', '#BE123C', '#6D28D9', '#15803D'];
 const CROP_SIZE = 280;
+const STUDENTS_FILTERS_STORAGE_KEY = 'students.filters.v1';
+const SUBJECTS_FILTERS_STORAGE_KEY = 'subjects.filters.v1';
+const FILTER_PERSISTENCE_KEY = 'filters.persistence.enabled';
 
-export function SettingsPage({ user, profile, onProfileUpdate }: SettingsPageProps) {
+export function SettingsPage({ user, profile, persistenceFocusToken = 0, onProfileUpdate }: SettingsPageProps) {
   const today = new Date();
   const initialStartDate = profile?.semesterCalendar?.startDate ? new Date(profile.semesterCalendar.startDate) : today;
   const initialEndDate = profile?.semesterCalendar?.endDate ? new Date(profile.semesterCalendar.endDate) : today;
@@ -28,6 +31,8 @@ export function SettingsPage({ user, profile, onProfileUpdate }: SettingsPagePro
   const [termEndDate, setTermEndDate] = useState<Date>(initialEndDate);
   const [termStartNote, setTermStartNote] = useState(profile?.semesterCalendar?.startNote || '');
   const [termEndNote, setTermEndNote] = useState(profile?.semesterCalendar?.endNote || '');
+  const [persistFilters, setPersistFilters] = useState(() => localStorage.getItem(FILTER_PERSISTENCE_KEY) !== '0');
+  const [highlightPersistenceSection, setHighlightPersistenceSection] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const cropImageRef = useRef<HTMLImageElement | null>(null);
@@ -36,6 +41,8 @@ export function SettingsPage({ user, profile, onProfileUpdate }: SettingsPagePro
   const zoomRef = useRef(1);
   const isDraggingRef = useRef(false);
   const lastPosRef = useRef({ x: 0, y: 0 });
+  const persistenceSectionRef = useRef<HTMLDivElement | null>(null);
+  const persistenceHighlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const toDateString = (date: Date) => format(date, 'yyyy-MM-dd');
 
@@ -69,6 +76,23 @@ export function SettingsPage({ user, profile, onProfileUpdate }: SettingsPagePro
     setTermStartNote(profile?.semesterCalendar?.startNote || '');
     setTermEndNote(profile?.semesterCalendar?.endNote || '');
   }, [profile, user.displayName, user.photoURL]);
+
+  useEffect(() => {
+    return () => {
+      if (persistenceHighlightTimerRef.current) clearTimeout(persistenceHighlightTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!persistenceFocusToken) return;
+
+    persistenceSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setHighlightPersistenceSection(true);
+    if (persistenceHighlightTimerRef.current) clearTimeout(persistenceHighlightTimerRef.current);
+    persistenceHighlightTimerRef.current = setTimeout(() => {
+      setHighlightPersistenceSection(false);
+    }, 1500);
+  }, [persistenceFocusToken]);
 
   useEffect(() => {
     if (!pendingLogoSrc) {
@@ -189,6 +213,24 @@ export function SettingsPage({ user, profile, onProfileUpdate }: SettingsPagePro
     setAppPrimaryColor(DEFAULT_PRIMARY_COLOR);
     resetCropState();
     setMessage({ type: 'success', text: 'รีเซ็ตธีมกลับค่าเริ่มต้นแล้ว กดบันทึกเพื่อใช้งาน' });
+  };
+
+  const clearSavedFilters = () => {
+    localStorage.removeItem(STUDENTS_FILTERS_STORAGE_KEY);
+    localStorage.removeItem(SUBJECTS_FILTERS_STORAGE_KEY);
+    setMessage({ type: 'success', text: 'ล้างค่าตัวกรองที่จำไว้ทั้งหมดแล้ว' });
+  };
+
+  const togglePersistFilters = () => {
+    const next = !persistFilters;
+    setPersistFilters(next);
+    localStorage.setItem(FILTER_PERSISTENCE_KEY, next ? '1' : '0');
+    if (!next) {
+      localStorage.removeItem(STUDENTS_FILTERS_STORAGE_KEY);
+      localStorage.removeItem(SUBJECTS_FILTERS_STORAGE_KEY);
+    }
+    window.dispatchEvent(new CustomEvent('filters-persistence-changed', { detail: { enabled: next } }));
+    setMessage({ type: 'success', text: next ? 'เปิดการจำค่าตัวกรองแล้ว' : 'ปิดการจำค่าตัวกรองและล้างค่าที่จำไว้แล้ว' });
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -408,6 +450,40 @@ export function SettingsPage({ user, profile, onProfileUpdate }: SettingsPagePro
                   />
                   <span className="text-xs font-medium text-gray-600">{appPrimaryColor.toUpperCase()}</span>
                 </div>
+              </div>
+            </div>
+
+            <div
+              ref={persistenceSectionRef}
+              className={cn(
+                'bg-white border border-gray-100 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 transition-all',
+                highlightPersistenceSection && 'ring-2 ring-primary/40 shadow-[0_0_0_8px_rgba(201,76,0,0.15)]'
+              )}
+            >
+              <div>
+                <p className="text-sm font-bold text-gray-800">ค่าตัวกรองที่จำไว้</p>
+                <p className="text-xs text-gray-500">ล้างค่าฟิลเตอร์หน้า นักเรียน/รายวิชา ที่ระบบบันทึกไว้ในอุปกรณ์นี้</p>
+              </div>
+              <div className="flex items-center gap-2 sm:gap-3">
+                <button
+                  type="button"
+                  onClick={togglePersistFilters}
+                  className={cn(
+                    'px-4 py-2 rounded-xl text-sm font-semibold border transition-colors',
+                    persistFilters
+                      ? 'border-green-200 bg-green-50 text-green-700'
+                      : 'border-gray-200 bg-white text-gray-700'
+                  )}
+                >
+                  {persistFilters ? 'จำ filter: เปิด' : 'จำ filter: ปิด'}
+                </button>
+                <button
+                  type="button"
+                  onClick={clearSavedFilters}
+                  className="px-4 py-2 rounded-xl text-sm font-semibold border border-gray-200 text-gray-700 hover:bg-page-bg"
+                >
+                  ล้างค่าที่จำไว้ทั้งหมด
+                </button>
               </div>
             </div>
           </div>

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { User as FirebaseUser } from 'firebase/auth';
 import { addDoc, collection } from 'firebase/firestore';
 import * as XLSX from 'xlsx';
@@ -12,15 +12,30 @@ import { handleFirestoreError } from '../services/firestoreError';
 import { ConfirmDialog } from '../components/shared/ConfirmDialog';
 import { deleteStudentsCascadeBulk } from '../services/studentService';
 
+const STUDENTS_FILTERS_STORAGE_KEY = 'students.filters.v1';
+const FILTER_PERSISTENCE_KEY = 'filters.persistence.enabled';
+
 interface StudentsPageProps {
   students: Student[];
   attendance: Attendance[];
   scores: Score[];
   user: FirebaseUser;
+  quickAction?: 'none' | 'missing-score' | 'attendance-risk';
+  quickActionVersion?: number;
+  onOpenPersistenceSettings?: () => void;
   onStudentClick: (id: string) => void;
 }
 
-export function StudentsPage({ students, attendance, scores, user, onStudentClick }: StudentsPageProps) {
+export function StudentsPage({
+  students,
+  attendance,
+  scores,
+  user,
+  quickAction = 'none',
+  quickActionVersion = 0,
+  onOpenPersistenceSettings,
+  onStudentClick,
+}: StudentsPageProps) {
   const [isAdding, setIsAdding] = useState(false);
   const [name, setName] = useState('');
   const [studentId, setStudentId] = useState('');
@@ -32,6 +47,7 @@ export function StudentsPage({ students, attendance, scores, user, onStudentClic
   const [filterYear, setFilterYear] = useState('all');
   const [filterRoom, setFilterRoom] = useState<'all' | '1' | '2'>('all');
   const [attendanceFilter, setAttendanceFilter] = useState<'all' | 'good' | 'medium' | 'risk' | 'no-record'>('all');
+  const [scoreFilter, setScoreFilter] = useState<'all' | 'no-score'>('all');
   const [isDepartmentOpen, setIsDepartmentOpen] = useState(false);
   const [isYearOpen, setIsYearOpen] = useState(false);
   const [isRoomOpen, setIsRoomOpen] = useState(false);
@@ -40,6 +56,14 @@ export function StudentsPage({ students, attendance, scores, user, onStudentClic
   const [isDeletingAll, setIsDeletingAll] = useState(false);
   const [deletingAll, setDeletingAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activeQuickHighlight, setActiveQuickHighlight] = useState<'none' | 'missing-score' | 'attendance-risk'>('none');
+  const [highlightFilterPanel, setHighlightFilterPanel] = useState(false);
+  const [showRestoreToast, setShowRestoreToast] = useState(false);
+  const [persistFilters, setPersistFilters] = useState(() => localStorage.getItem(FILTER_PERSISTENCE_KEY) !== '0');
+  const quickInfoRef = useRef<HTMLDivElement | null>(null);
+  const filterPanelRef = useRef<HTMLDivElement | null>(null);
+  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const restoreToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const STUDENT_ID_REGEX = /^[a-zA-Z0-9-]{5,20}$/;
   const ATTENDANCE_GOOD_THRESHOLD = 80;
@@ -59,6 +83,129 @@ export function StudentsPage({ students, attendance, scores, user, onStudentClic
     setIsRoomOpen(false);
     setIsAttendanceOpen(false);
   };
+
+  useEffect(() => {
+    if (!persistFilters) return;
+    try {
+      const raw = localStorage.getItem(STUDENTS_FILTERS_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as {
+        searchTerm?: string;
+        filterDepartment?: string;
+        filterYear?: string;
+        filterRoom?: 'all' | '1' | '2';
+        attendanceFilter?: 'all' | 'good' | 'medium' | 'risk' | 'no-record';
+        scoreFilter?: 'all' | 'no-score';
+      };
+
+      setSearchTerm(parsed.searchTerm || '');
+      setFilterDepartment(parsed.filterDepartment || 'all');
+      setFilterYear(parsed.filterYear || 'all');
+      setFilterRoom(parsed.filterRoom || 'all');
+      setAttendanceFilter(parsed.attendanceFilter || 'all');
+      setScoreFilter(parsed.scoreFilter || 'all');
+
+      const hasSavedFilter = Boolean(
+        (parsed.searchTerm && parsed.searchTerm.trim()) ||
+        (parsed.filterDepartment && parsed.filterDepartment !== 'all') ||
+        (parsed.filterYear && parsed.filterYear !== 'all') ||
+        (parsed.filterRoom && parsed.filterRoom !== 'all') ||
+        (parsed.attendanceFilter && parsed.attendanceFilter !== 'all') ||
+        (parsed.scoreFilter && parsed.scoreFilter !== 'all')
+      );
+
+      if (hasSavedFilter) {
+        setShowRestoreToast(true);
+        if (restoreToastTimerRef.current) clearTimeout(restoreToastTimerRef.current);
+        restoreToastTimerRef.current = setTimeout(() => setShowRestoreToast(false), 2200);
+      }
+    } catch {
+      // Ignore malformed local storage and keep defaults.
+    }
+  }, [persistFilters]);
+
+  useEffect(() => {
+    if (!persistFilters) return;
+    const payload = {
+      searchTerm,
+      filterDepartment,
+      filterYear,
+      filterRoom,
+      attendanceFilter,
+      scoreFilter,
+    };
+    localStorage.setItem(STUDENTS_FILTERS_STORAGE_KEY, JSON.stringify(payload));
+  }, [persistFilters, searchTerm, filterDepartment, filterYear, filterRoom, attendanceFilter, scoreFilter]);
+
+  useEffect(() => {
+    const onToggle = (event: Event) => {
+      const customEvent = event as CustomEvent<{ enabled?: boolean }>;
+      const enabled = customEvent.detail?.enabled ?? localStorage.getItem(FILTER_PERSISTENCE_KEY) !== '0';
+      setPersistFilters(Boolean(enabled));
+    };
+
+    window.addEventListener('filters-persistence-changed', onToggle as EventListener);
+    return () => window.removeEventListener('filters-persistence-changed', onToggle as EventListener);
+  }, []);
+
+  const resetAllFilters = () => {
+    setSearchTerm('');
+    setFilterDepartment('all');
+    setFilterYear('all');
+    setFilterRoom('all');
+    setAttendanceFilter('all');
+    setScoreFilter('all');
+    closeFilterDropdowns();
+  };
+
+  const hasActiveFilters =
+    searchTerm.trim().length > 0 ||
+    filterDepartment !== 'all' ||
+    filterYear !== 'all' ||
+    filterRoom !== 'all' ||
+    attendanceFilter !== 'all' ||
+    scoreFilter !== 'all';
+
+  const flashScrollTarget = (type: 'missing-score' | 'attendance-risk') => {
+    setActiveQuickHighlight(type);
+    setHighlightFilterPanel(true);
+    if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+    highlightTimerRef.current = setTimeout(() => {
+      setActiveQuickHighlight('none');
+      setHighlightFilterPanel(false);
+    }, 1600);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+      if (restoreToastTimerRef.current) clearTimeout(restoreToastTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (quickAction === 'missing-score') {
+      setScoreFilter('no-score');
+      setAttendanceFilter('all');
+      flashScrollTarget('missing-score');
+      requestAnimationFrame(() => {
+        (quickInfoRef.current || filterPanelRef.current)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+      return;
+    }
+
+    if (quickAction === 'attendance-risk') {
+      setAttendanceFilter('risk');
+      setScoreFilter('all');
+      flashScrollTarget('attendance-risk');
+      requestAnimationFrame(() => {
+        filterPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+      return;
+    }
+
+    // Keep current filters when no quick action is requested.
+  }, [quickAction, quickActionVersion]);
 
   const handleAddStudent = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -241,27 +388,56 @@ export function StudentsPage({ students, attendance, scores, user, onStudentClic
         (attendanceFilter === 'medium' && stats.total > 0 && stats.rate >= ATTENDANCE_MEDIUM_THRESHOLD && stats.rate < ATTENDANCE_GOOD_THRESHOLD) ||
         (attendanceFilter === 'risk' && stats.total > 0 && stats.rate < ATTENDANCE_MEDIUM_THRESHOLD);
 
-      return matchesSearch && matchesDepartment && matchesYear && matchesRoom && matchesAttendance;
+      const hasScores = scores.some((s) => s.studentId === student.studentId);
+      const matchesScore = scoreFilter === 'all' || (scoreFilter === 'no-score' && !hasScores);
+
+      return matchesSearch && matchesDepartment && matchesYear && matchesRoom && matchesAttendance && matchesScore;
     });
-  }, [students, searchTerm, filterDepartment, filterYear, filterRoom, attendanceFilter, attendanceStatsByStudentId, normalizeStudentYear]);
+  }, [students, scores, searchTerm, filterDepartment, filterYear, filterRoom, attendanceFilter, scoreFilter, attendanceStatsByStudentId, normalizeStudentYear]);
 
   return (
-    <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-8">
-      <header className="flex items-center justify-between">
+    <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6 md:space-y-8">
+      {showRestoreToast && (
+        <motion.div
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -8 }}
+          className="fixed right-4 top-20 z-40 rounded-xl bg-gray-900 text-white text-xs px-3 py-2 shadow-xl"
+        >
+          กู้คืนตัวกรองล่าสุดแล้ว
+        </motion.div>
+      )}
+
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-4xl font-bold text-gray-900 tracking-tight mb-2">นักเรียน</h2>
-          <p className="text-gray-500">จัดการรายชื่อและโปรไฟล์นักเรียน</p>
+          <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 tracking-tight mb-1 sm:mb-2">นักเรียน</h2>
+          <p className="text-sm sm:text-base text-gray-500">จัดการรายชื่อและโปรไฟล์นักเรียน</p>
+          <div className="mt-2">
+            <button
+              type="button"
+              onClick={() => onOpenPersistenceSettings?.()}
+              title="ON: จำตัวกรองล่าสุดไว้ | OFF: ไม่จำและล้างค่าที่เคยจำ"
+              aria-label="เปิดหน้า Settings เพื่อจัดการการจำค่าตัวกรอง"
+              className={cn(
+                'inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold transition-colors',
+                'hover:brightness-95 focus:outline-none focus:ring-2 focus:ring-primary/30',
+                persistFilters ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
+              )}
+            >
+              Persistence: {persistFilters ? 'ON' : 'OFF'}
+            </button>
+          </div>
         </div>
-        <div className="flex gap-4">
+        <div className="flex flex-wrap gap-3">
           <button
             onClick={() => setIsDeletingAll(true)}
             disabled={students.length === 0 || deletingAll}
-            className="bg-red-50 text-red-600 px-6 py-3 rounded-2xl font-semibold flex items-center gap-2 hover:bg-red-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            className="bg-red-50 text-red-600 px-4 py-2.5 sm:px-6 sm:py-3 rounded-2xl text-sm font-semibold flex items-center gap-2 hover:bg-red-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Trash2 className="w-5 h-5" />
             {deletingAll ? 'กำลังลบ...' : 'ลบนักเรียนทั้งหมด'}
           </button>
-          <button onClick={() => setIsAdding(true)} className="bg-primary text-white px-6 py-3 rounded-2xl font-semibold flex items-center gap-2 hover:bg-primary/90 transition-all shadow-lg shadow-primary/20">
+          <button onClick={() => setIsAdding(true)} className="bg-primary text-white px-4 py-2.5 sm:px-6 sm:py-3 rounded-2xl text-sm font-semibold flex items-center gap-2 hover:bg-primary/90 transition-all shadow-lg shadow-primary/20">
             <UserPlus className="w-5 h-5" />
             เพิ่มนักเรียน
           </button>
@@ -269,10 +445,10 @@ export function StudentsPage({ students, attendance, scores, user, onStudentClic
       </header>
 
       {isAdding && (
-        <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="bg-white p-8 rounded-3xl shadow-xl border border-primary/20 space-y-8">
-          <div className="flex items-center justify-between border-b border-page-bg pb-6">
+        <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="bg-white p-5 sm:p-8 rounded-3xl shadow-xl border border-primary/20 space-y-6 sm:space-y-8">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-page-bg pb-4 sm:pb-6">
             <h3 className="text-xl font-bold text-gray-900">เพิ่มนักเรียนใหม่</h3>
-            <div className="flex items-center gap-4">
+            <div className="flex flex-wrap items-center gap-3 sm:gap-4">
               <a
                 href="/sample_students_upload.xlsx"
                 download
@@ -340,14 +516,70 @@ export function StudentsPage({ students, attendance, scores, user, onStudentClic
         </motion.div>
       )}
 
-      <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-6">
+      <div
+        ref={filterPanelRef}
+        className={cn(
+          'bg-white rounded-3xl shadow-sm border border-gray-100 p-4 sm:p-6 transition-all',
+          highlightFilterPanel && 'ring-2 ring-primary/30 shadow-lg'
+        )}
+      >
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <p className="text-xs sm:text-sm text-gray-500">ตัวกรองรายการนักเรียน</p>
+          <button
+            type="button"
+            onClick={resetAllFilters}
+            disabled={!hasActiveFilters}
+            className="text-xs sm:text-sm font-semibold text-primary disabled:text-gray-300 disabled:cursor-not-allowed"
+          >
+            รีเซ็ตตัวกรองทั้งหมด
+          </button>
+        </div>
+        {scoreFilter === 'no-score' && (
+          <div
+            ref={quickInfoRef}
+            className={cn(
+              'mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs sm:text-sm text-amber-800 flex items-center justify-between gap-3 transition-all',
+              activeQuickHighlight === 'missing-score'
+                ? 'ring-2 ring-amber-300 shadow-[0_0_0_8px_rgba(245,158,11,0.2)] opacity-100'
+                : 'opacity-95'
+            )}
+          >
+            <span>กำลังแสดงเฉพาะนักเรียนที่ยังไม่มีคะแนน (จาก badge เมนูล่าง)</span>
+            <button
+              type="button"
+              onClick={() => setScoreFilter('all')}
+              className="font-semibold underline underline-offset-2"
+            >
+              ล้างตัวกรอง
+            </button>
+          </div>
+        )}
+        {attendanceFilter === 'risk' && (
+          <div
+            className={cn(
+              'mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-xs sm:text-sm text-red-700 flex items-center justify-between gap-3 transition-all',
+              activeQuickHighlight === 'attendance-risk'
+                ? 'ring-2 ring-red-300 shadow-[0_0_0_8px_rgba(239,68,68,0.2)] opacity-100'
+                : 'opacity-95'
+            )}
+          >
+            <span>กำลังแสดงเฉพาะนักเรียนที่มีความเสี่ยงขาดเรียน (จาก badge เมนูล่าง)</span>
+            <button
+              type="button"
+              onClick={() => setAttendanceFilter('all')}
+              className="font-semibold underline underline-offset-2"
+            >
+              ล้างตัวกรอง
+            </button>
+          </div>
+        )}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
           <div className="relative lg:col-span-2">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="ค้นหาชื่อหรือรหัสนักเรียน" className="w-full pl-11 pr-4 py-3 bg-page-bg border-none rounded-2xl text-sm focus:ring-2 focus:ring-primary outline-none" />
           </div>
           <div className="relative">
-            <button type="button" onClick={() => { const next = !isDepartmentOpen; closeFilterDropdowns(); setIsDepartmentOpen(next); }} className={cn('w-full min-w-[220px] px-4 py-3 bg-page-bg rounded-2xl text-sm text-left flex items-center justify-between transition-all', isDepartmentOpen ? 'ring-2 ring-primary' : 'hover:bg-page-bg/80')}>
+            <button type="button" onClick={() => { const next = !isDepartmentOpen; closeFilterDropdowns(); setIsDepartmentOpen(next); }} className={cn('w-full min-w-0 md:min-w-[220px] px-4 py-3 bg-page-bg rounded-2xl text-sm text-left flex items-center justify-between transition-all', isDepartmentOpen ? 'ring-2 ring-primary' : 'hover:bg-page-bg/80')}>
               <span className="truncate">{filterDepartment === 'all' ? 'ทุกแผนก' : filterDepartment}</span>
               <ChevronDown className={cn('w-4 h-4 text-gray-400 transition-transform', isDepartmentOpen && 'rotate-180')} />
             </button>
@@ -375,7 +607,7 @@ export function StudentsPage({ students, attendance, scores, user, onStudentClic
           </div>
 
           <div className="relative">
-            <button type="button" onClick={() => { const next = !isYearOpen; closeFilterDropdowns(); setIsYearOpen(next); }} className={cn('w-full min-w-[180px] px-4 py-3 bg-page-bg rounded-2xl text-sm text-left flex items-center justify-between transition-all', isYearOpen ? 'ring-2 ring-primary' : 'hover:bg-page-bg/80')}>
+            <button type="button" onClick={() => { const next = !isYearOpen; closeFilterDropdowns(); setIsYearOpen(next); }} className={cn('w-full min-w-0 md:min-w-[180px] px-4 py-3 bg-page-bg rounded-2xl text-sm text-left flex items-center justify-between transition-all', isYearOpen ? 'ring-2 ring-primary' : 'hover:bg-page-bg/80')}>
               <span className="truncate">{filterYear === 'all' ? 'ทุกชั้นปี' : formatYearLabel(filterYear)}</span>
               <ChevronDown className={cn('w-4 h-4 text-gray-400 transition-transform', isYearOpen && 'rotate-180')} />
             </button>
@@ -403,7 +635,7 @@ export function StudentsPage({ students, attendance, scores, user, onStudentClic
           </div>
 
           <div className="relative">
-            <button type="button" onClick={() => { const next = !isRoomOpen; closeFilterDropdowns(); setIsRoomOpen(next); }} className={cn('w-full min-w-[140px] px-4 py-3 bg-page-bg rounded-2xl text-sm text-left flex items-center justify-between transition-all', isRoomOpen ? 'ring-2 ring-primary' : 'hover:bg-page-bg/80')}>
+            <button type="button" onClick={() => { const next = !isRoomOpen; closeFilterDropdowns(); setIsRoomOpen(next); }} className={cn('w-full min-w-0 md:min-w-[140px] px-4 py-3 bg-page-bg rounded-2xl text-sm text-left flex items-center justify-between transition-all', isRoomOpen ? 'ring-2 ring-primary' : 'hover:bg-page-bg/80')}>
               <span className="truncate">{filterRoom === 'all' ? 'ทุกห้อง' : `ห้อง ${filterRoom}`}</span>
               <ChevronDown className={cn('w-4 h-4 text-gray-400 transition-transform', isRoomOpen && 'rotate-180')} />
             </button>
@@ -431,7 +663,7 @@ export function StudentsPage({ students, attendance, scores, user, onStudentClic
           </div>
 
           <div className="relative">
-            <button type="button" onClick={() => { const next = !isAttendanceOpen; closeFilterDropdowns(); setIsAttendanceOpen(next); }} className={cn('w-full min-w-[220px] px-4 py-3 bg-page-bg rounded-2xl text-sm text-left flex items-center justify-between transition-all', isAttendanceOpen ? 'ring-2 ring-primary' : 'hover:bg-page-bg/80')}>
+            <button type="button" onClick={() => { const next = !isAttendanceOpen; closeFilterDropdowns(); setIsAttendanceOpen(next); }} className={cn('w-full min-w-0 md:min-w-[220px] px-4 py-3 bg-page-bg rounded-2xl text-sm text-left flex items-center justify-between transition-all', isAttendanceOpen ? 'ring-2 ring-primary' : 'hover:bg-page-bg/80')}>
               <span className="truncate">{attendanceFilterLabel[attendanceFilter]}</span>
               <ChevronDown className={cn('w-4 h-4 text-gray-400 transition-transform', isAttendanceOpen && 'rotate-180')} />
             </button>
@@ -455,11 +687,11 @@ export function StudentsPage({ students, attendance, scores, user, onStudentClic
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
         {filteredStudents.map((student) => {
           const attendanceStats = attendanceStatsByStudentId.get(student.studentId) || { present: 0, absent: 0, late: 0, sick: 0, total: 0, rate: 0 };
           return (
-            <button key={student.id} onClick={() => onStudentClick(student.id)} className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 hover:shadow-md transition-all group text-left w-full">
+            <button key={student.id} onClick={() => onStudentClick(student.id)} className="bg-white p-4 sm:p-6 rounded-3xl shadow-sm border border-gray-100 hover:shadow-md transition-all group text-left w-full">
               <div className="flex items-start justify-between mb-4">
                 <div className="w-14 h-14 bg-secondary/20 rounded-2xl flex items-center justify-center text-xl font-bold text-primary">{student.name.charAt(0)}</div>
                 <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest bg-page-bg px-2 py-1 rounded-lg">{formatYearLabel(student.year)}</span>
