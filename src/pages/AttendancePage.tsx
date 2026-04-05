@@ -66,19 +66,19 @@ export function AttendancePage({ students, subjects, attendance, user }: Attenda
       initial={{ opacity: 0, x: 20 }}
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: -20 }}
-      className="space-y-8"
+      className="space-y-6 md:space-y-8"
     >
-      <header className="flex items-center justify-between">
+      <header className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h2 className="text-4xl font-bold text-gray-900 tracking-tight mb-2">การเช็คชื่อ</h2>
-          <p className="text-gray-500">บันทึกและติดตามการมาเรียนของนักเรียนรายวัน</p>
+          <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 tracking-tight mb-1 sm:mb-2">การเช็คชื่อ</h2>
+          <p className="text-sm sm:text-base text-gray-500">บันทึกและติดตามการมาเรียนของนักเรียนรายวัน</p>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="relative">
+        <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center lg:w-auto lg:justify-end">
+          <div className="relative w-full sm:flex-1 lg:w-auto lg:min-w-[320px]">
             <button
               onClick={() => setIsSubjectOpen((v) => !v)}
               className={cn(
-                'flex items-center gap-3 px-5 py-3 bg-white border rounded-2xl shadow-sm hover:shadow-md transition-all text-sm font-medium min-w-[260px] justify-between',
+                'flex w-full items-center gap-3 px-4 sm:px-5 py-3 bg-white border rounded-2xl shadow-sm hover:shadow-md transition-all text-sm font-medium justify-between',
                 isSubjectOpen ? 'border-primary ring-2 ring-primary/20' : 'border-gray-100'
               )}
             >
@@ -94,7 +94,7 @@ export function AttendancePage({ students, subjects, attendance, user }: Attenda
             {isSubjectOpen && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setIsSubjectOpen(false)} />
-                <div className="absolute top-full mt-2 left-0 z-50 bg-white rounded-2xl shadow-2xl border border-gray-100 w-full min-w-[320px] overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                <div className="absolute top-full mt-2 left-0 z-50 bg-white rounded-2xl shadow-2xl border border-gray-100 w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
                   {subjects.length === 0 ? (
                     <div className="px-5 py-4 text-sm text-gray-400 text-center">ไม่มีรายวิชา</div>
                   ) : (
@@ -113,10 +113,10 @@ export function AttendancePage({ students, subjects, attendance, user }: Attenda
                             )}
                           >
                             <div className={cn('w-2 h-2 rounded-full shrink-0', selectedSubject === s.id ? 'bg-primary' : 'bg-gray-200')} />
-                              <div>
-                                <div className="font-semibold">{s.code} - {s.name}</div>
-                                <div className="text-[11px] text-gray-400">{s.level} · ห้อง {s.room || '1'} · {s.department}</div>
-                              </div>
+                            <div>
+                              <div className="font-semibold">{s.code} - {s.name}</div>
+                              <div className="text-[11px] text-gray-400">{s.level} · ห้อง {s.room || '1'} · {s.department}</div>
+                            </div>
                           </button>
                         </li>
                       ))}
@@ -127,12 +127,14 @@ export function AttendancePage({ students, subjects, attendance, user }: Attenda
             )}
           </div>
 
-          <ThaiDatePicker value={selectedDateObj} onChange={(date) => setSelectedDateObj(date)} />
+          <div className="w-full sm:w-auto">
+            <ThaiDatePicker value={selectedDateObj} onChange={(date) => setSelectedDateObj(date)} className="w-full" />
+          </div>
         </div>
       </header>
 
       <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="p-6 border-b border-page-bg flex items-center gap-4">
+        <div className="p-4 sm:p-6 border-b border-page-bg flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
           <div className="relative flex-1">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
@@ -145,7 +147,7 @@ export function AttendancePage({ students, subjects, attendance, user }: Attenda
             />
           </div>
           {selectedSubjectObj && (
-            <span className="text-xs font-bold text-primary bg-primary/10 px-3 py-2 rounded-xl whitespace-nowrap">
+            <span className="self-start sm:self-auto text-xs font-bold text-primary bg-primary/10 px-3 py-2 rounded-xl whitespace-nowrap">
               {filteredStudents.length} คน
             </span>
           )}
@@ -162,8 +164,46 @@ export function AttendancePage({ students, subjects, attendance, user }: Attenda
             <p className="font-semibold">ไม่พบนักเรียนในวิชานี้</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
+          <>
+            <div className="md:hidden divide-y divide-page-bg">
+              {filteredStudents.map((student) => {
+                const record = attendance.find(
+                  (a) => a.studentId === student.studentId && a.date === selectedDate && (!selectedSubject || a.subjectId === selectedSubject)
+                );
+                return (
+                  <div key={student.id} className="px-4 py-4 space-y-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex items-center gap-3">
+                        <div className="w-9 h-9 bg-secondary/20 rounded-full flex items-center justify-center text-xs font-bold text-primary shrink-0">
+                          {student.name.charAt(0)}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-semibold text-sm text-gray-900 truncate">{student.name}</p>
+                          <p className="text-xs text-gray-500 truncate">{student.studentId}</p>
+                        </div>
+                      </div>
+                      <StatusBadge status={record?.status || 'not-marked'} />
+                    </div>
+
+                    <div className="grid grid-cols-4 gap-2">
+                      <AttendanceBtn active={record?.status === 'present'} onClick={() => markAttendance(student.studentId, 'present')} label="ม" color="green" />
+                      <AttendanceBtn active={record?.status === 'absent'} onClick={() => markAttendance(student.studentId, 'absent')} label="ข" color="red" />
+                      <AttendanceBtn active={record?.status === 'late'} onClick={() => markAttendance(student.studentId, 'late')} label="ส" color="yellow" />
+                      <AttendanceBtn active={record?.status === 'sick'} onClick={() => markAttendance(student.studentId, 'sick')} label="ล" color="blue" />
+                    </div>
+                    <div className="grid grid-cols-4 gap-2 text-[11px] text-gray-500">
+                      <span className="text-center">มา</span>
+                      <span className="text-center">ขาด</span>
+                      <span className="text-center">สาย</span>
+                      <span className="text-center">ลา</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left">
               <thead>
                 <tr className="bg-page-bg/50 text-[10px] uppercase tracking-widest font-bold text-gray-400">
                   <th className="px-8 py-4">นักเรียน</th>
@@ -203,8 +243,9 @@ export function AttendancePage({ students, subjects, attendance, user }: Attenda
                   );
                 })}
               </tbody>
-            </table>
-          </div>
+              </table>
+            </div>
+          </>
         )}
       </div>
     </motion.div>
@@ -220,7 +261,7 @@ function AttendanceBtn({ active, onClick, label, color }: { active: boolean; onC
   };
 
   return (
-    <button onClick={onClick} className={cn('w-8 h-8 rounded-lg text-[10px] font-bold transition-all active:scale-90', colors[color])}>
+    <button onClick={onClick} className={cn('w-9 h-9 md:w-8 md:h-8 rounded-lg text-xs md:text-[10px] font-bold transition-all active:scale-90', colors[color])}>
       {label}
     </button>
   );
