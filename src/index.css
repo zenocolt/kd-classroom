@@ -1,0 +1,25 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+Thai:wght@100..900&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Noto Sans Thai", "Inter", ui-sans-serif, system-ui, sans-serif;
+  
+  /* Custom Color Palette from Image */
+  --color-sky: #A2C9E1;
+  --color-cream: #F9F4E1;
+  --color-terracotta: #C94C00;
+  --color-sand: #D9B985;
+  
+  /* Mapping to semantic names */
+  --color-primary: var(--color-terracotta);
+  --color-secondary: var(--color-sky);
+  --color-accent: var(--color-sand);
+  --color-page-bg: var(--color-cream);
+}
+
+@layer base {
+  body {
+    @apply bg-page-bg text-gray-900;
+  }
+}
+

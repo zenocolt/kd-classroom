@@ -1,0 +1,83 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && 
+        (
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
+          (request.auth.token.email == "10natnicha2com58@gmail.com" && request.auth.token.email_verified == true) ||
+          (request.auth.token.email == "thanakorn.9@technicchan.ac.th" && request.auth.token.email_verified == true)
+        );
+    }
+    
+    function isTeacher() {
+      return isAuthenticated() && 
+        (
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'teacher') || 
+          isAdmin()
+        );
+    }
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    // User: { uid: string, email: string, displayName: string, role: string }
+    // Student: { studentId: string, name: string, department: string, year: string }
+    // Attendance: { studentId: string, date: string, status: string, teacherId: string }
+    // Score: { studentId: string, type: string, score: number, maxScore: number, description: string, teacherId: string, timestamp: timestamp }
+    // Slide: { title: string, url: string, subjectId: string, teacherId: string, timestamp: timestamp }
+    // CourseContent: { title: string, description: string, url: string, subjectId: string, teacherId: string, timestamp: timestamp }
+
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAdmin() || isOwner(userId);
+    }
+
+    match /students/{studentId} {
+      allow read: if isAuthenticated();
+      allow create: if isTeacher() && request.resource.data.teacherId == request.auth.uid;
+      allow update, delete: if isAdmin() || (isTeacher() && resource.data.teacherId == request.auth.uid);
+    }
+
+    match /subjects/{subjectId} {
+      allow read: if isAuthenticated();
+      allow create: if isTeacher() && request.resource.data.teacherId == request.auth.uid;
+      allow update, delete: if isAdmin() || (isTeacher() && resource.data.teacherId == request.auth.uid);
+    }
+
+    match /attendance/{attendanceId} {
+      allow read: if isAuthenticated();
+      allow create: if isTeacher() && request.resource.data.teacherId == request.auth.uid;
+      allow update, delete: if isAdmin() || (isTeacher() && resource.data.teacherId == request.auth.uid);
+    }
+
+    match /scores/{scoreId} {
+      allow read: if isAuthenticated();
+      allow create: if isTeacher() && request.resource.data.teacherId == request.auth.uid;
+      allow update, delete: if isAdmin() || (isTeacher() && resource.data.teacherId == request.auth.uid);
+    }
+
+    match /slides/{slideId} {
+      allow read: if isAuthenticated();
+      allow create: if isTeacher() && request.resource.data.teacherId == request.auth.uid;
+      allow update, delete: if isAdmin() || (isTeacher() && resource.data.teacherId == request.auth.uid);
+    }
+
+    match /course_content/{contentId} {
+      allow read: if isAuthenticated();
+      allow create: if isTeacher() && request.resource.data.teacherId == request.auth.uid;
+      allow update, delete: if isAdmin() || (isTeacher() && resource.data.teacherId == request.auth.uid);
+    }
+  }
+}
