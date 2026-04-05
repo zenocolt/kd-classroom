@@ -57,7 +57,7 @@ export function Reminders({ students, scores }: RemindersProps) {
               initial={{ opacity: 0, y: 10, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 10, scale: 0.95 }}
-              className="absolute right-0 mt-4 w-80 bg-white rounded-3xl shadow-2xl border border-gray-100 z-50 p-6 space-y-4"
+              className="fixed left-4 right-4 top-[calc(env(safe-area-inset-top,0px)+180px)] z-50 mx-auto w-auto max-w-md bg-white rounded-3xl shadow-2xl border border-gray-100 p-5 sm:p-6 space-y-4 sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-4 sm:w-80"
             >
               <h4 className="font-bold text-gray-900 flex items-center gap-2">
                 <AlertCircle className="w-4 h-4 text-primary" />
