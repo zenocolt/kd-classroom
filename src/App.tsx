@@ -169,6 +169,7 @@ export default function App() {
   const [settingsPersistenceFocusToken, setSettingsPersistenceFocusToken] = useState(0);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(null);
+  const [assignmentFilterSubjectId, setAssignmentFilterSubjectId] = useState<string | null>(null);
   const [dashboardSubView, setDashboardSubView] = useState<'main' | 'slides' | 'content'>('main');
   const listenersEnabled = isAuthReady && !!user && !!profile;
   const students = useStudents(user, profile, listenersEnabled);
@@ -275,6 +276,7 @@ export default function App() {
   useEffect(() => {
     if (activeTab !== 'students') setStudentsQuickAction('none');
     if (activeTab !== 'subjects') setSubjectsQuickAction('none');
+    if (activeTab !== 'assignments') setAssignmentFilterSubjectId(null);
   }, [activeTab]);
 
   // Test connection
@@ -597,7 +599,10 @@ export default function App() {
                     setDashboardSubView('main');
                   }}
                   onNavigateAttendance={() => setActiveTab('attendance')}
-                  onNavigateScores={() => setActiveTab('scores')}
+                  onNavigateAssignments={() => {
+                    setAssignmentFilterSubjectId(selectedSubjectId);
+                    setActiveTab('assignments');
+                  }}
                 />
               ) : (
                 <SubjectsPage 
@@ -617,6 +622,8 @@ export default function App() {
                 submissions={submissions}
                 subjects={subjects}
                 students={students}
+                initialSubjectId={assignmentFilterSubjectId}
+                onBackToSubject={assignmentFilterSubjectId ? () => setActiveTab('subjects') : undefined}
               />
             )}
             {activeTab === 'users' && profile?.role === 'admin' && (

@@ -1,45 +1,9 @@
 /**
- * DaiClassroom – Automated Assignment Reminder
- * =============================================
- * Firebase Scheduled Cloud Function (v2) that runs every day at 08:00 ICT.
- *
- * Logic:
- *  1. Query `assignments` for items due TOMORROW or already OVERDUE (within
- *     the last 30 days, to avoid spamming ancient deadlines).
- *  2. For each assignment, fetch `submissions` whose `status == 'not_submitted'`.
- *  3. Resolve each missing student's `line_user_id` from the `students` collection.
- *  4. Send a personalised LINE Push Message via the LINE Messaging API.
- *  5. Write a summary log document to `reminderLogs` for auditing.
- *
- * Firestore schema assumed
- * ------------------------
- * assignments/{id}
- *   title        : string
- *   subjectId    : string
- *   teacherId    : string
- *   due_date     : Timestamp
- *   description? : string
- *
- * submissions/{id}
- *   assignmentId : string
- *   studentId    : string   ← Firestore document ID of the student
- *   status       : 'submitted' | 'not_submitted'
- *   submittedAt? : Timestamp
- *
- * students/{id}
- *   studentId    : string   ← school ID (e.g. "64001")
- *   name         : string
- *   line_user_id : string   ← LINE user ID (e.g. "Uxxxxxxxx...")
- *   department   : string
- *   year         : string
- *   teacherId    : string
- *
- * Environment / Firebase config
- * ------------------------------
- * Set the LINE channel access token BEFORE deploying:
- *   firebase functions:secrets:set LINE_CHANNEL_ACCESS_TOKEN
- *   (or)
- *   firebase functions:config:set line.channel_access_token="<token>"
+ * DaiClassroom – LINE reminder and summary functions
+ * ==================================================
+ * LINE notifications are now manual-only. Teachers trigger reminder sends from
+ * the application UI; the old scheduled reminder job remains deployed as a
+ * no-op so it cannot push messages automatically anymore.
  */
 
 import * as admin from 'firebase-admin';
@@ -403,240 +367,19 @@ export const sendAssignmentGroupSummary = onCall(
 // ─── Scheduled Function ───────────────────────────────────────────────────────
 
 /**
- * Runs daily at 08:00 ICT (UTC+7).
- * Sends LINE push messages to students who have not submitted assignments
- * that are due tomorrow or already overdue (within the last 30 days).
+ * Disabled scheduled reminder job.
+ * Kept as a deployed no-op so the system no longer sends automatic LINE
+ * reminders; all reminder delivery now happens only when a teacher triggers it
+ * from the application.
  */
 export const sendAssignmentReminders = onSchedule(
   {
-    // cron syntax: minute hour day-of-month month day-of-week
     schedule: '0 8 * * *',
     timeZone: 'Asia/Bangkok',
     region: 'asia-southeast1',
-    // Make the LINE token available inside this function's execution context
-    secrets: [LINE_CHANNEL_ACCESS_TOKEN],
   },
   async (_event) => {
-    console.log('[sendAssignmentReminders] Starting daily reminder job…');
-
-    // ── Step 1: Calculate the date range ──────────────────────────────────────
-
-    const now = new Date();
-    // Midnight at the very start of today (Bangkok time, but Date uses UTC –
-    // Firestore Timestamps use UTC too, so comparisons are consistent).
-    const startOfToday = new Date(now);
-    startOfToday.setHours(0, 0, 0, 0);
-
-    // End of tomorrow (23:59:59.999)
-    const endOfTomorrow = new Date(startOfToday);
-    endOfTomorrow.setDate(endOfTomorrow.getDate() + 2);
-    endOfTomorrow.setMilliseconds(endOfTomorrow.getMilliseconds() - 1);
-
-    // Do not remind about assignments older than 30 days to avoid noise
-    const overdueWindowStart = new Date(startOfToday);
-    overdueWindowStart.setDate(overdueWindowStart.getDate() - 30);
-
-    const tsOverdueStart = admin.firestore.Timestamp.fromDate(overdueWindowStart);
-    const tsEndOfTomorrow = admin.firestore.Timestamp.fromDate(endOfTomorrow);
-    const tsStartOfToday = admin.firestore.Timestamp.fromDate(startOfToday);
-
-    // ── Step 2: Fetch qualifying assignments ──────────────────────────────────
-    //
-    // We make two queries because Firestore does not support OR on different
-    // field ranges in a single query:
-    //   • Overdue   → due_date ∈ [30 days ago, start of today)
-    //   • Tomorrow  → due_date ∈ [start of tomorrow, end of tomorrow]
-
-    let assignments: Assignment[] = [];
-
-    try {
-      const startOfTomorrow = new Date(startOfToday);
-      startOfTomorrow.setDate(startOfTomorrow.getDate() + 1);
-      const tsStartOfTomorrow = admin.firestore.Timestamp.fromDate(startOfTomorrow);
-
-      // Overdue assignments (deadline already passed, within the 30-day window)
-      const overdueSnap = await db
-        .collection('assignments')
-        .where('due_date', '>=', tsOverdueStart)
-        .where('due_date', '<', tsStartOfToday)
-        .get();
-
-      // Assignments due exactly tomorrow
-      const tomorrowSnap = await db
-        .collection('assignments')
-        .where('due_date', '>=', tsStartOfTomorrow)
-        .where('due_date', '<=', tsEndOfTomorrow)
-        .get();
-
-      const fromDocs = (snap: admin.firestore.QuerySnapshot): Assignment[] =>
-        snap.docs.map((doc) => ({ id: doc.id, ...doc.data() } as Assignment));
-
-      // Merge and de-duplicate by document ID
-      const seen = new Set<string>();
-      for (const a of [...fromDocs(overdueSnap), ...fromDocs(tomorrowSnap)]) {
-        if (!seen.has(a.id)) {
-          seen.add(a.id);
-          assignments.push(a);
-        }
-      }
-
-      console.log(`[sendAssignmentReminders] Found ${assignments.length} qualifying assignment(s).`);
-    } catch (err) {
-      console.error('[sendAssignmentReminders] Error querying assignments:', err);
-      // Re-throw so Cloud Functions marks the invocation as failed
-      throw err;
-    }
-
-    if (assignments.length === 0) {
-      console.log('[sendAssignmentReminders] No assignments require reminders today.');
-      return;
-    }
-
-    // ── Step 3 & 4: For each assignment, find unsubmitted students ────────────
-
-    const lineClient = new messagingApi.MessagingApiClient({
-      channelAccessToken: LINE_CHANNEL_ACCESS_TOKEN.value(),
-    });
-
-    // Counters used for the audit log
-    let totalMessagesSent = 0;
-    let totalErrors = 0;
-    const errorDetails: string[] = [];
-
-    for (const assignment of assignments) {
-      console.log(`[sendAssignmentReminders] Processing assignment "${assignment.title}" (${assignment.id})`);
-
-      const isOverdue = assignment.due_date.toDate() < startOfToday;
-      const dueDateLabel = formatDueDateThai(assignment.due_date);
-
-      // ── Step 3a: Query submissions with status 'not_submitted' ──────────────
-      let missingSubmissions: Submission[] = [];
-      try {
-        const submissionsSnap = await db
-          .collection('submissions')
-          .where('assignmentId', '==', assignment.id)
-          .where('status', '==', 'not_submitted')
-          .get();
-
-        missingSubmissions = submissionsSnap.docs.map(
-          (doc) => ({ id: doc.id, ...doc.data() } as Submission)
-        );
-
-        console.log(
-          `  → ${missingSubmissions.length} student(s) have not submitted "${assignment.title}".`
-        );
-      } catch (err) {
-        const msg = `Failed to query submissions for assignment ${assignment.id}: ${String(err)}`;
-        console.error(`  ✗ ${msg}`);
-        errorDetails.push(msg);
-        totalErrors++;
-        // Continue to the next assignment rather than aborting everything
-        continue;
-      }
-
-      if (missingSubmissions.length === 0) continue;
-
-      // ── Step 3b: Batch-fetch student documents ───────────────────────────────
-      //
-      // Firestore `getAll` accepts up to 500 DocumentReferences, which is more
-      // than enough for a typical classroom batch.
-
-      const studentRefs = missingSubmissions.map((s) =>
-        db.collection('students').doc(s.studentId)
-      );
-
-      let studentDocs: admin.firestore.DocumentSnapshot[] = [];
-      try {
-        studentDocs = await db.getAll(...studentRefs);
-      } catch (err) {
-        const msg = `Failed to batch-fetch students for assignment ${assignment.id}: ${String(err)}`;
-        console.error(`  ✗ ${msg}`);
-        errorDetails.push(msg);
-        totalErrors++;
-        continue;
-      }
-
-      // Build a map: studentDocId → Student for O(1) lookups
-      const studentMap = new Map<string, Student>();
-      for (const doc of studentDocs) {
-        if (doc.exists) {
-          studentMap.set(doc.id, { id: doc.id, ...doc.data() } as Student);
-        }
-      }
-
-      // ── Step 4: Send a LINE Push Message to each missing student ─────────────
-      for (const submission of missingSubmissions) {
-        const student = studentMap.get(submission.studentId);
-
-        if (!student) {
-          const msg = `Student document not found: ${submission.studentId}`;
-          console.warn(`  ⚠ ${msg}`);
-          errorDetails.push(msg);
-          continue;
-        }
-
-        if (!student.line_user_id) {
-          // Student has not linked their LINE account – skip silently
-          console.warn(
-            `  ⚠ Student "${student.name}" (${student.studentId}) has no line_user_id – skipping.`
-          );
-          continue;
-        }
-
-        const messageText = buildReminderMessage(
-          student.name,
-          assignment.title,
-          dueDateLabel,
-          isOverdue
-        );
-
-        try {
-          await lineClient.pushMessage({
-            to: student.line_user_id,
-            messages: [
-              {
-                type: 'text',
-                text: messageText,
-              },
-            ],
-          });
-
-          console.log(`  ✓ Reminder sent to "${student.name}" (LINE: ${student.line_user_id})`);
-          totalMessagesSent++;
-        } catch (err: unknown) {
-          // Narrow the error to extract a useful message
-          const errMessage =
-            err instanceof Error
-              ? `${err.message}`
-              : String(err);
-
-          const msg = `LINE push failed for student "${student.name}" (${student.line_user_id}): ${errMessage}`;
-          console.error(`  ✗ ${msg}`);
-          errorDetails.push(msg);
-          totalErrors++;
-          // Continue sending to other students even if one fails
-        }
-      }
-    }
-
-    // ── Step 5: Write audit log to Firestore ────────────────────────────────────
-
-    try {
-      await db.collection('reminderLogs').add({
-        runAt: admin.firestore.FieldValue.serverTimestamp(),
-        assignmentsProcessed: assignments.length,
-        messagesSent: totalMessagesSent,
-        errors: totalErrors,
-        errorDetails: errorDetails.slice(0, 50), // cap array size in Firestore
-      });
-    } catch (logErr) {
-      // Logging failure must not mask the main job result
-      console.error('[sendAssignmentReminders] Failed to write audit log:', logErr);
-    }
-
-    console.log(
-      `[sendAssignmentReminders] Done. Sent: ${totalMessagesSent}, Errors: ${totalErrors}.`
-    );
+    console.log('[sendAssignmentReminders] Scheduled reminders are disabled. Manual sends only.');
   }
 );
 

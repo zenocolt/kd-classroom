@@ -13,7 +13,7 @@ export interface SubjectDashboardProps {
   onSubViewChange: (view: 'main' | 'slides' | 'content') => void;
   onBack: () => void;
   onNavigateAttendance: () => void;
-  onNavigateScores: () => void;
+  onNavigateAssignments: () => void;
 }
 
 export interface SlidesViewProps {

@@ -31,7 +31,7 @@ export function SubjectDashboard({
   onSubViewChange,
   onBack,
   onNavigateAttendance,
-  onNavigateScores
+  onNavigateAssignments
 }: SubjectDashboardProps) {
   if (!subject) return null;
 
@@ -65,7 +65,7 @@ export function SubjectDashboard({
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <QuickAccessCard icon={<CheckCircle />} label="การเข้าเรียน" onClick={onNavigateAttendance} color="bg-green-100 text-green-600" />
-        <QuickAccessCard icon={<FileText />} label="งานที่มอบหมาย" onClick={onNavigateScores} color="bg-primary/10 text-primary" />
+        <QuickAccessCard icon={<FileText />} label="งานที่มอบหมาย" onClick={onNavigateAssignments} color="bg-primary/10 text-primary" />
         <QuickAccessCard icon={<LayoutDashboard />} label="สไลด์การสอน" onClick={() => onSubViewChange('slides')} color="bg-secondary/20 text-secondary" />
         <QuickAccessCard icon={<FileText />} label="เนื้อหาบทเรียน" onClick={() => onSubViewChange('content')} color="bg-accent/20 text-accent" />
       </div>

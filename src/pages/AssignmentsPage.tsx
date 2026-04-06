@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { User as FirebaseUser } from 'firebase/auth';
 import { Timestamp } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'motion/react';
@@ -37,6 +37,20 @@ interface AssignmentsPageProps {
   submissions: Submission[];
   subjects: Subject[];
   students: Student[];
+  initialSubjectId?: string | null;
+  onBackToSubject?: () => void;
+}
+
+function findScrollContainer(element: HTMLElement | null): HTMLElement | null {
+  let current = element?.parentElement ?? null;
+  while (current) {
+    const { overflowY } = window.getComputedStyle(current);
+    if ((overflowY === 'auto' || overflowY === 'scroll') && current.scrollHeight > current.clientHeight) {
+      return current;
+    }
+    current = current.parentElement;
+  }
+  return document.scrollingElement instanceof HTMLElement ? document.scrollingElement : null;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -73,6 +87,8 @@ interface AssignmentDetailProps {
   submissions: Submission[];
   userId: string;
   onBack: () => void;
+  onBackToList: () => void;
+  onBackToSubject?: () => void;
   onDeleteAssignment: (a: Assignment) => void;
   onEditAssignment: (a: Assignment) => void;
 }
@@ -84,6 +100,8 @@ function AssignmentDetail({
   submissions,
   userId,
   onBack,
+  onBackToList,
+  onBackToSubject,
   onDeleteAssignment,
   onEditAssignment,
 }: AssignmentDetailProps) {
@@ -210,52 +228,77 @@ function AssignmentDetail({
       className="space-y-8"
     >
       {/* Header */}
-      <header className="flex items-start justify-between gap-4">
-        <button
-          onClick={onBack}
-          className="flex items-center gap-2 text-gray-500 hover:text-gray-800 transition-colors font-medium text-sm mt-1"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          กลับ
-        </button>
-        <div className="flex items-center gap-2">
+      <header className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0 flex-1 space-y-3">
+          <button
+            onClick={onBack}
+            className="flex items-center gap-2 text-gray-500 hover:text-gray-800 transition-colors font-medium text-sm mt-1"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            กลับ
+          </button>
+          <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-gray-400 sm:text-sm">
+            {subject && onBackToSubject ? (
+              <button
+                type="button"
+                onClick={onBackToSubject}
+                className="text-left text-gray-500 transition-colors hover:text-gray-800"
+              >
+                {subject.code} • {subject.name}
+              </button>
+            ) : (
+              <span className="text-gray-500">{subject ? `${subject.code} • ${subject.name}` : 'รายวิชา'}</span>
+            )}
+            <ChevronRight className="w-4 h-4 text-gray-300" />
+            <button
+              type="button"
+              onClick={onBackToList}
+              className="transition-colors hover:text-gray-700"
+            >
+              งานที่มอบหมาย
+            </button>
+            <ChevronRight className="w-4 h-4 text-gray-300" />
+            <span className="text-gray-700">รายละเอียดงาน</span>
+          </div>
+        </div>
+        <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:justify-end">
           <button
             onClick={() => setIsGroupSummaryConfirmOpen(true)}
-            className="flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-4 py-2 text-sm font-semibold text-sky-700 transition-colors hover:bg-sky-100"
+            className="flex min-h-[56px] items-center justify-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-3 text-center text-sm font-semibold leading-tight text-sky-700 transition-colors hover:bg-sky-100 sm:min-h-0 sm:px-4 sm:py-2"
           >
-            <MessagesSquare className="w-4 h-4" />
+            <MessagesSquare className="h-4 w-4 shrink-0" />
             ส่งสรุปเข้ากลุ่ม
           </button>
           <button
             onClick={() => setIsReminderConfirmOpen(true)}
             disabled={isSaving || pendingStudentDocIds.length === 0}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl border border-primary/20 bg-primary/10 text-primary text-sm font-semibold hover:bg-primary/15 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex min-h-[56px] items-center justify-center gap-2 rounded-xl border border-primary/20 bg-primary/10 px-3 py-3 text-center text-sm font-semibold leading-tight text-primary transition-colors hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-0 sm:px-4 sm:py-2"
           >
-            <BellRing className="w-4 h-4" />
+            <BellRing className="h-4 w-4 shrink-0" />
             {isSaving ? 'กำลังส่ง...' : `ทวงงานห้องนี้ (${pendingStudentDocIds.length})`}
           </button>
           <button
             onClick={() => onEditAssignment(assignment)}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl border border-gray-200 text-gray-700 text-sm font-medium hover:bg-page-bg transition-colors"
+            className="flex min-h-[52px] items-center justify-center gap-2 rounded-xl border border-gray-200 px-3 py-3 text-center text-sm font-medium text-gray-700 transition-colors hover:bg-page-bg sm:min-h-0 sm:px-4 sm:py-2"
           >
-            <Edit className="w-4 h-4" />
+            <Edit className="h-4 w-4 shrink-0" />
             แก้ไข
           </button>
           <button
             onClick={() => onDeleteAssignment(assignment)}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl border border-red-200 text-red-600 text-sm font-medium hover:bg-red-50 transition-colors"
+            className="flex min-h-[52px] items-center justify-center gap-2 rounded-xl border border-red-200 px-3 py-3 text-center text-sm font-medium text-red-600 transition-colors hover:bg-red-50 sm:min-h-0 sm:px-4 sm:py-2"
           >
-            <Trash2 className="w-4 h-4" />
+            <Trash2 className="h-4 w-4 shrink-0" />
             ลบ
           </button>
         </div>
       </header>
 
       {/* Assignment Info Card */}
-      <div className="bg-white rounded-3xl p-8 shadow-sm border border-gray-100 space-y-4">
-        <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="space-y-3 rounded-3xl border border-gray-100 bg-white p-5 shadow-sm sm:p-8 sm:space-y-4">
+        <div className="flex flex-wrap items-start justify-between gap-3 sm:gap-4">
           <div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-1">{assignment.title}</h2>
+            <h2 className="mb-1 text-xl font-bold text-gray-900 sm:text-2xl">{assignment.title}</h2>
             <p className="text-gray-500 text-sm">{subject?.name ?? '—'}</p>
           </div>
           <span className={cn('px-3 py-1 rounded-full text-xs font-semibold', statusColor[dueDateStatus])}>
@@ -267,7 +310,7 @@ function AssignmentDetail({
           <p className="text-gray-600 text-sm leading-relaxed">{assignment.description}</p>
         )}
 
-        <div className="flex items-center gap-2 text-sm text-gray-500">
+        <div className="flex items-start gap-2 text-sm text-gray-500 sm:items-center">
           <Calendar className="w-4 h-4 text-primary" />
           <span>กำหนดส่ง: <span className="font-semibold text-gray-800">{formatDueDate(assignment.due_date)}</span></span>
         </div>
@@ -310,13 +353,13 @@ function AssignmentDetail({
       </AnimatePresence>
 
       {/* Submission Tracking */}
-      <div className="bg-white rounded-3xl p-8 shadow-sm border border-gray-100 space-y-6">
-        <div className="flex items-center justify-between">
-          <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+      <div className="space-y-4 rounded-3xl border border-gray-100 bg-white p-5 shadow-sm sm:p-8 sm:space-y-6">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <h3 className="flex items-center gap-2 text-base font-bold text-gray-900 sm:text-lg">
             <Users className="w-5 h-5 text-primary" />
             การส่งงาน
           </h3>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 pl-7 sm:pl-0">
             <span className="text-sm text-gray-500">
               ส่งแล้ว{' '}
               <span className="font-bold text-primary">{submittedCount}</span>
@@ -326,7 +369,7 @@ function AssignmentDetail({
         </div>
 
         {/* Progress bar */}
-        <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+        <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100">
           <div
             className="h-full bg-primary rounded-full transition-all duration-500"
             style={{
@@ -345,9 +388,9 @@ function AssignmentDetail({
               const sub = submissionMap.get(student.id);
               const submitted = sub?.status === 'submitted';
               return (
-                <li key={student.id} className="flex items-center justify-between py-3 gap-4">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xs shrink-0">
+                <li key={student.id} className="flex items-center justify-between gap-3 py-2.5 sm:gap-4 sm:py-3">
+                  <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
                       {student.name.charAt(0)}
                     </div>
                     <div className="min-w-0">
@@ -358,7 +401,7 @@ function AssignmentDetail({
                   <button
                     onClick={() => toggle(student)}
                     className={cn(
-                      'flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all shrink-0',
+                      'flex shrink-0 items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-semibold transition-all sm:px-3',
                       submitted
                         ? 'bg-green-100 text-green-700 hover:bg-green-200'
                         : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
@@ -581,6 +624,8 @@ export function AssignmentsPage({
   submissions,
   subjects,
   students,
+  initialSubjectId,
+  onBackToSubject,
 }: AssignmentsPageProps) {
   const {
     isSaving,
@@ -593,8 +638,33 @@ export function AssignmentsPage({
   const [editingAssignment, setEditingAssignment] = useState<Assignment | null>(null);
   const [deletingAssignment, setDeletingAssignment] = useState<Assignment | null>(null);
   const [selectedAssignmentId, setSelectedAssignmentId] = useState<string | null>(null);
-  const [filterSubjectId, setFilterSubjectId] = useState<string>('all');
+  const [filterSubjectId, setFilterSubjectId] = useState<string>(initialSubjectId ?? 'all');
   const [isSubjectFilterOpen, setIsSubjectFilterOpen] = useState(false);
+  const listViewRef = useRef<HTMLDivElement | null>(null);
+  const savedScrollTopRef = useRef(0);
+  const shouldRestoreScrollRef = useRef(false);
+
+  useEffect(() => {
+    setFilterSubjectId(initialSubjectId ?? 'all');
+  }, [initialSubjectId]);
+
+  useEffect(() => {
+    if (selectedAssignmentId || !shouldRestoreScrollRef.current) return;
+
+    const restoreScroll = () => {
+      const container = findScrollContainer(listViewRef.current);
+      if (container) {
+        container.scrollTo({ top: savedScrollTopRef.current, behavior: 'auto' });
+      }
+      shouldRestoreScrollRef.current = false;
+    };
+
+    const frameId = window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(restoreScroll);
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [selectedAssignmentId]);
 
   const selectedAssignment = useMemo(
     () => assignments.find((a) => a.id === selectedAssignmentId) ?? null,
@@ -638,6 +708,22 @@ export function AssignmentsPage({
     subjects.forEach((s) => m.set(s.id, s));
     return m;
   }, [subjects]);
+
+  const contextSubject = useMemo(
+    () => (initialSubjectId ? subjectMap.get(initialSubjectId) ?? null : null),
+    [initialSubjectId, subjectMap]
+  );
+
+  const openAssignmentDetail = (assignmentId: string) => {
+    const container = findScrollContainer(listViewRef.current);
+    savedScrollTopRef.current = container?.scrollTop ?? 0;
+    setSelectedAssignmentId(assignmentId);
+  };
+
+  const returnToAssignmentList = () => {
+    shouldRestoreScrollRef.current = true;
+    setSelectedAssignmentId(null);
+  };
 
   // Students per subject for bulk-initialising submissions
   const getStudentsForSubject = (subjectId: string) => {
@@ -713,7 +799,9 @@ export function AssignmentsPage({
         students={students}
         submissions={submissions}
         userId={user.uid}
-        onBack={() => setSelectedAssignmentId(null)}
+        onBack={returnToAssignmentList}
+        onBackToList={returnToAssignmentList}
+        onBackToSubject={contextSubject && onBackToSubject ? onBackToSubject : undefined}
         onDeleteAssignment={(a) => {
           setDeletingAssignment(a);
           setSelectedAssignmentId(null);
@@ -726,6 +814,7 @@ export function AssignmentsPage({
   // ── List view ──
   return (
     <motion.div
+      ref={listViewRef}
       initial={{ opacity: 0, x: 20 }}
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: -20 }}
@@ -734,8 +823,21 @@ export function AssignmentsPage({
       {/* Page header */}
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div>
+          {contextSubject && onBackToSubject && (
+            <button
+              onClick={onBackToSubject}
+              className="mb-3 inline-flex items-center gap-2 text-sm font-medium text-gray-500 transition-colors hover:text-gray-800"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              กลับไปวิชา {contextSubject.code}
+            </button>
+          )}
           <h2 className="text-4xl font-bold text-gray-900 tracking-tight mb-2">งานที่มอบหมาย</h2>
-          <p className="text-gray-500">สร้างและติดตามการส่งงานของนักเรียน</p>
+          <p className="text-gray-500">
+            {contextSubject
+              ? `สร้างและติดตามการส่งงานของ ${contextSubject.name}`
+              : 'สร้างและติดตามการส่งงานของนักเรียน'}
+          </p>
         </div>
         <button
           onClick={openCreate}
@@ -884,38 +986,51 @@ export function AssignmentsPage({
               overdue: 'เลยกำหนด',
               today: 'วันนี้',
               tomorrow: 'พรุ่งนี้',
-              upcoming: formatDueDate(a.due_date),
+              upcoming: 'ยังไม่ครบกำหนด',
             };
+
+            const dueDateText = formatDueDate(a.due_date);
 
             return (
               <motion.button
                 key={a.id}
                 layout
-                onClick={() => setSelectedAssignmentId(a.id)}
+                onClick={() => openAssignmentDetail(a.id)}
                 className={cn(
-                  'w-full text-left bg-white rounded-2xl p-5 border border-gray-100 border-l-4 shadow-sm',
+                  'w-full rounded-2xl border border-gray-100 border-l-4 bg-white p-4 text-left shadow-sm sm:p-5',
                   'hover:shadow-md hover:-translate-y-0.5 transition-all',
                   rowStatusColor[dueDateStatus]
                 )}
               >
-                <div className="flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-4 min-w-0">
-                    <div className="min-w-0">
-                      <p className="font-semibold text-gray-900 truncate">{a.title}</p>
-                      <p className="text-xs text-gray-400 mt-0.5">{subject?.name ?? '—'}</p>
-                    </div>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-gray-900 sm:text-base">{a.title}</p>
+                    <p className="mt-0.5 text-xs text-gray-400">{subject?.name ?? '—'}</p>
                   </div>
-                  <div className="flex items-center gap-3 shrink-0">
-                    <span className={cn('px-2.5 py-1 rounded-full text-xs font-semibold', badgeColor[dueDateStatus])}>
+                  <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-gray-300" />
+                </div>
+
+                <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={cn('rounded-full px-2.5 py-1 text-xs font-semibold', badgeColor[dueDateStatus])}>
                       {statusLabel[dueDateStatus]}
                     </span>
-                    {subjectStudents.length > 0 && (
-                      <span className="text-xs text-gray-400 hidden sm:block">
-                        ส่ง {submittedCount}/{subjectStudents.length}
-                      </span>
-                    )}
-                    <ChevronRight className="w-4 h-4 text-gray-300" />
+                    <span className="inline-flex items-center gap-1.5 text-xs text-gray-500">
+                      <Calendar className="h-3.5 w-3.5 text-primary" />
+                      กำหนดส่ง {dueDateText}
+                    </span>
                   </div>
+                  {subjectStudents.length > 0 && (
+                    <span className="text-xs text-gray-400 sm:text-right">
+                      ส่ง {submittedCount}/{subjectStudents.length}
+                    </span>
+                  )}
+                </div>
+
+                <div className="mt-3 flex items-center justify-between gap-3 sm:hidden">
+                    {subjectStudents.length > 0 && (
+                      <span className="text-[11px] text-gray-300">แตะเพื่อดูรายละเอียด</span>
+                    )}
                 </div>
                 {/* Mini progress bar */}
                 {subjectStudents.length > 0 && (
