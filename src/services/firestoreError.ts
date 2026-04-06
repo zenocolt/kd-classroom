@@ -1,5 +1,6 @@
 import { auth } from '../firebase';
 import { FirestoreErrorInfo, OperationType } from '../types';
+import { notify } from '../utils/notify';
 
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
   const message = error instanceof Error ? error.message : String(error);
@@ -31,6 +32,10 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   };
 
   console.error('Firestore Error: ', JSON.stringify(errInfo));
-  alert(userMessage);
+  notify({
+    type: 'error',
+    title: 'ไม่สามารถดำเนินการได้',
+    message: userMessage,
+  });
   throw new Error(JSON.stringify(errInfo));
 }

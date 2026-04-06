@@ -3,6 +3,7 @@ import { User as FirebaseUser } from 'firebase/auth';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import {
+  Assignment,
   Attendance,
   CourseContent,
   OperationType,
@@ -10,6 +11,7 @@ import {
   Slide,
   Student,
   Subject,
+  Submission,
   UserProfile,
 } from '../types';
 import { handleFirestoreError } from '../services/firestoreError';
@@ -67,6 +69,14 @@ export function useSlides(user: FirebaseUser | null, profile: UserProfile | null
 
 export function useCourseContent(user: FirebaseUser | null, profile: UserProfile | null, enabled: boolean) {
   return useScopedCollection<CourseContent>('course_content', user, profile, enabled, (docData) => docData as CourseContent);
+}
+
+export function useAssignments(user: FirebaseUser | null, profile: UserProfile | null, enabled: boolean) {
+  return useScopedCollection<Assignment>('assignments', user, profile, enabled, (docData) => docData as Assignment);
+}
+
+export function useSubmissions(user: FirebaseUser | null, profile: UserProfile | null, enabled: boolean) {
+  return useScopedCollection<Submission>('submissions', user, profile, enabled, (docData) => docData as Submission);
 }
 
 export function useUsers(profile: UserProfile | null, enabled: boolean) {

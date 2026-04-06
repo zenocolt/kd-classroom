@@ -18,6 +18,8 @@ export interface Subject {
   room?: string;
   department: string;
   teacherId: string;
+  lineGroupId?: string;
+  lineGroupBoundAt?: Timestamp;
 }
 
 export interface Attendance {
@@ -58,6 +60,26 @@ export interface CourseContent {
   subjectId: string;
   teacherId: string;
   timestamp: Timestamp;
+}
+
+export interface Assignment {
+  id: string;
+  title: string;
+  description: string;
+  subjectId: string;
+  teacherId: string;
+  due_date: Timestamp;
+  createdAt: Timestamp;
+}
+
+export interface Submission {
+  id: string;
+  assignmentId: string;
+  /** Firestore document ID of the student */
+  studentId: string;
+  status: 'submitted' | 'not_submitted';
+  submittedAt?: Timestamp;
+  teacherId: string;
 }
 
 export interface SemesterCalendar {

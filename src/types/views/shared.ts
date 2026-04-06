@@ -8,7 +8,7 @@ export interface ConfirmDialogProps {
   cancelLabel: string;
   onConfirm: () => void;
   onCancel: () => void;
-  variant?: 'primary' | 'danger';
+  variant?: 'primary' | 'success' | 'info' | 'warning' | 'danger';
 }
 
 export interface RemindersProps {

@@ -44,7 +44,8 @@ import {
   X,
   ExternalLink,
   Edit,
-  BookOpen
+  BookOpen,
+  ClipboardList
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { motion, AnimatePresence } from 'motion/react';
@@ -54,6 +55,7 @@ import { cn } from './lib/utils';
 import { ThaiDatePicker } from './components/ThaiDatePicker';
 import { StatusBadge } from './components/StatusBadge';
 import { ConfirmDialog } from './components/shared/ConfirmDialog';
+import { NotificationCenter } from './components/shared/NotificationCenter';
 import { Reminders } from './components/shared/Reminders';
 import { DashboardPage } from './pages/DashboardPage';
 import { AttendancePage } from './pages/AttendancePage';
@@ -64,7 +66,9 @@ import { SubjectsPage } from './pages/SubjectsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { UsersPage } from './pages/UsersPage';
 import { SubjectDashboard } from './pages/subject/SubjectDashboardPage';
+import { AssignmentsPage } from './pages/AssignmentsPage';
 import {
+  Assignment,
   Attendance,
   CourseContent,
   OperationType,
@@ -73,16 +77,19 @@ import {
   Slide,
   Student,
   Subject,
+  Submission,
   UserProfile,
 } from './types';
 import { useAuthFlow } from './hooks/useAuthFlow';
 import {
+  useAssignments,
   useAttendance,
   useCourseContent,
   useScores,
   useSlides,
   useStudents,
   useSubjects,
+  useSubmissions,
   useUsers,
 } from './hooks/useFirestoreListeners';
 import { useStudentDeletion } from './hooks/useStudentDeletion';
@@ -153,7 +160,7 @@ export default function App() {
     handleLogout,
     handleProfileUpdate,
   } = useAuthFlow();
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'attendance' | 'scores' | 'students' | 'subjects' | 'users' | 'settings'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'attendance' | 'scores' | 'students' | 'subjects' | 'assignments' | 'users' | 'settings'>('dashboard');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [studentsQuickAction, setStudentsQuickAction] = useState<'none' | 'missing-score' | 'attendance-risk'>('none');
   const [studentsQuickActionVersion, setStudentsQuickActionVersion] = useState(0);
@@ -170,6 +177,8 @@ export default function App() {
   const scores = useScores(user, profile, listenersEnabled);
   const slides = useSlides(user, profile, listenersEnabled);
   const courseContent = useCourseContent(user, profile, listenersEnabled);
+  const assignments = useAssignments(user, profile, listenersEnabled);
+  const submissions = useSubmissions(user, profile, listenersEnabled);
   const users = useUsers(profile, listenersEnabled);
   const [storedBrandName, setStoredBrandName] = useState<string>(DEFAULT_BRAND_NAME);
   const [storedBrandSubtitle, setStoredBrandSubtitle] = useState<string>(DEFAULT_BRAND_SUBTITLE);
@@ -194,6 +203,11 @@ export default function App() {
     () => subjects.filter((subject) => subject.room !== '1' && subject.room !== '2').length,
     [subjects]
   );
+  const assignmentsOverdueCount = useMemo(() => {
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    return assignments.filter((a) => a.due_date.toDate() < startOfToday).length;
+  }, [assignments]);
   const termEndDate = useMemo(() => new Date('2026-04-15'), []);
   const daysUntilEnd = Math.ceil((termEndDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
   const reminderCount = (daysUntilEnd > 0 && daysUntilEnd <= 14 ? 1 : 0) + (studentsWithoutScoresCount > 0 ? 1 : 0);
@@ -368,6 +382,7 @@ export default function App() {
 
   return (
     <ErrorBoundary>
+      <NotificationCenter />
       <div className="min-h-screen bg-page-bg lg:flex">
         {isMobileSidebarOpen && (
           <button
@@ -435,6 +450,12 @@ export default function App() {
                 onClick={() => setActiveTab('subjects')} 
                 icon={<FileText />} 
                 label="รายวิชา" 
+              />
+              <NavItem 
+                active={activeTab === 'assignments'} 
+                onClick={() => setActiveTab('assignments')} 
+                icon={<ClipboardList />} 
+                label="งานมอบหมาย" 
               />
               {profile?.role === 'admin' && (
                 <NavItem 
@@ -589,6 +610,15 @@ export default function App() {
                 />
               )
             )}
+            {activeTab === 'assignments' && (
+              <AssignmentsPage
+                user={user}
+                assignments={assignments}
+                submissions={submissions}
+                subjects={subjects}
+                students={students}
+              />
+            )}
             {activeTab === 'users' && profile?.role === 'admin' && (
               <UsersPage users={users} />
             )}
@@ -607,7 +637,7 @@ export default function App() {
           className="fixed bottom-0 left-0 right-0 z-30 lg:hidden bg-white/95 backdrop-blur border-t border-gray-200 shadow-[0_-10px_30px_rgba(0,0,0,0.06)]"
           style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 0px)' }}
         >
-          <div className="grid grid-cols-5 gap-1 px-2 py-2">
+          <div className="grid grid-cols-6 gap-1 px-2 py-2">
             <BottomNavItem
               active={activeTab === 'dashboard'}
               onClick={() => setActiveTab('dashboard')}
@@ -668,6 +698,14 @@ export default function App() {
                 setSubjectsQuickActionVersion((v) => v + 1);
                 setActiveTab('subjects');
               }}
+            />
+            <BottomNavItem
+              active={activeTab === 'assignments'}
+              onClick={() => setActiveTab('assignments')}
+              icon={<ClipboardList />}
+              label="งาน"
+              badgeCount={assignmentsOverdueCount}
+              badgeVariant="warning"
             />
             <BottomNavItem
               active={activeTab === 'settings'}

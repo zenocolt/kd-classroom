@@ -11,6 +11,7 @@ import { Attendance, OperationType, Score, Student } from '../types';
 import { handleFirestoreError } from '../services/firestoreError';
 import { ConfirmDialog } from '../components/shared/ConfirmDialog';
 import { deleteStudentsCascadeBulk } from '../services/studentService';
+import { notify } from '../utils/notify';
 
 const STUDENTS_FILTERS_STORAGE_KEY = 'students.filters.v1';
 const FILTER_PERSISTENCE_KEY = 'filters.persistence.enabled';
@@ -304,14 +305,30 @@ export function StudentsPage({
 
         if (importCount > 0) {
           await batch.commit();
-          alert(`นำเข้า ${importCount} นักเรียนสำเร็จ${skipCount > 0 ? ` (ข้าม ${skipCount} รายการ${invalidRoomCount > 0 ? `, ห้องไม่ถูกต้อง ${invalidRoomCount} รายการ` : ''})` : ''}`);
+          notify({
+            type: 'success',
+            title: `นำเข้า ${importCount} นักเรียนสำเร็จ`,
+            message: skipCount > 0
+              ? `ข้าม ${skipCount} รายการ${invalidRoomCount > 0 ? ` และพบห้องไม่ถูกต้อง ${invalidRoomCount} รายการ` : ''}`
+              : 'บันทึกข้อมูลเรียบร้อยแล้ว',
+          });
         } else {
-          alert(invalidRoomCount > 0 ? 'ไม่พบนักเรียนใหม่ที่ถูกต้องในไฟล์ (พบห้องที่ไม่ใช่ 1/2)' : 'ไม่พบนักเรียนใหม่ที่ถูกต้องในไฟล์');
+          notify({
+            type: 'warning',
+            title: 'ไม่พบนักเรียนใหม่ที่นำเข้าได้',
+            message: invalidRoomCount > 0
+              ? 'พบข้อมูลห้องที่ไม่ใช่ 1 หรือ 2 ในไฟล์ที่อัปโหลด'
+              : 'ไม่พบนักเรียนใหม่ที่ถูกต้องในไฟล์',
+          });
         }
         setIsAdding(false);
       } catch (error) {
         console.error('Excel import error:', error);
-        alert('ไม่สามารถนำเข้าไฟล์ Excel ได้ โปรดตรวจสอบรูปแบบไฟล์');
+        notify({
+          type: 'error',
+          title: 'นำเข้าไฟล์ไม่สำเร็จ',
+          message: 'ไม่สามารถนำเข้าไฟล์ Excel ได้ โปรดตรวจสอบรูปแบบไฟล์',
+        });
       } finally {
         setImporting(false);
         e.target.value = '';
@@ -335,7 +352,11 @@ export function StudentsPage({
         scoreIds: scores.filter((s) => studentIds.has(s.studentId)).map((s) => s.id),
       });
       setIsDeletingAll(false);
-      alert('ลบนักเรียนทั้งหมดสำเร็จ');
+      notify({
+        type: 'success',
+        title: 'ลบนักเรียนทั้งหมดสำเร็จ',
+        message: 'ข้อมูลนักเรียน คะแนน และการเช็คชื่อที่เกี่ยวข้องถูกลบแล้ว',
+      });
     } catch (deleteError) {
       handleFirestoreError(deleteError, OperationType.DELETE, 'students');
     } finally {

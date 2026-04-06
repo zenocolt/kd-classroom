@@ -1,0 +1,25 @@
+{
+  "name": "daiclassroom-functions",
+  "description": "Firebase Cloud Functions for DaiClassroom",
+  "scripts": {
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "serve": "npm run build && firebase emulators:start --only functions",
+    "deploy": "firebase deploy --only functions",
+    "logs": "firebase functions:log"
+  },
+  "engines": {
+    "node": "20"
+  },
+  "main": "lib/index.js",
+  "dependencies": {
+    "@line/bot-sdk": "^9.4.0",
+    "firebase-admin": "^10.3.0",
+    "firebase-functions": "^4.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.5.0"
+  },
+  "private": true
+}
