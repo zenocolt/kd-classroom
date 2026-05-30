@@ -2,9 +2,9 @@
 /**
  * DaiClassroom – LINE reminder and summary functions
  * ==================================================
- * LINE notifications are now manual-only. Teachers trigger reminder sends from
- * the application UI; the old scheduled reminder job remains deployed as a
- * no-op so it cannot push messages automatically anymore.
+ * LINE notifications are manual-only.
+ * Teachers trigger reminder sends from the application UI.
+ * Automatic scheduled reminders have been removed.
  */
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
@@ -40,9 +40,8 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.sendAssignmentReminders = exports.sendAssignmentGroupSummary = exports.sendAssignmentRoomReminder = exports.lineWebhook = void 0;
+exports.sendAssignmentGroupSummary = exports.sendAssignmentRoomReminder = exports.lineWebhook = void 0;
 const admin = __importStar(require("firebase-admin"));
-const scheduler_1 = require("firebase-functions/v2/scheduler");
 const https_1 = require("firebase-functions/v2/https");
 const params_1 = require("firebase-functions/params");
 const bot_sdk_1 = require("@line/bot-sdk");
@@ -292,28 +291,4 @@ exports.sendAssignmentGroupSummary = (0, https_1.onCall)({
         groupId: subject.lineGroupId,
     };
 });
-// ─── Scheduled Function ───────────────────────────────────────────────────────
-/**
- * Disabled scheduled reminder job.
- * Kept as a deployed no-op so the system no longer sends automatic LINE
- * reminders; all reminder delivery now happens only when a teacher triggers it
- * from the application.
- */
-exports.sendAssignmentReminders = (0, scheduler_1.onSchedule)({
-    schedule: '0 8 * * *',
-    timeZone: 'Asia/Bangkok',
-    region: 'asia-southeast1',
-}, async (_event) => {
-    console.log('[sendAssignmentReminders] Scheduled reminders are disabled. Manual sends only.');
-});
-// ─── Alternative: node-cron version (for standalone Express servers) ─────────
-//
-// If you prefer running this outside of Firebase Cloud Functions (e.g., on a
-// Cloud Run or VPS with Express), replace the `onSchedule` export above with:
-//
-//   import cron from 'node-cron';
-//   cron.schedule('0 8 * * *', reminderJobHandler, { timezone: 'Asia/Bangkok' });
-//
-// where `reminderJobHandler` is the async callback extracted from onSchedule.
-// Install the package with: npm install node-cron @types/node-cron
 //# sourceMappingURL=index.js.map

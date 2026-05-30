@@ -19,9 +19,6 @@ import {
 } from 'firebase/auth';
 import { db, auth } from './firebase';
 import { 
-  Users, 
-  CheckCircle, 
-  FileText, 
   LayoutDashboard, 
   LogOut, 
   Plus, 
@@ -45,7 +42,8 @@ import {
   ExternalLink,
   Edit,
   BookOpen,
-  ClipboardList
+  ClipboardList,
+  Bot
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { motion, AnimatePresence } from 'motion/react';
@@ -160,7 +158,7 @@ export default function App() {
     handleLogout,
     handleProfileUpdate,
   } = useAuthFlow();
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'attendance' | 'scores' | 'students' | 'subjects' | 'assignments' | 'users' | 'settings'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'attendance' | 'scores' | 'students' | 'subjects' | 'assignments' | 'users' | 'settings' | 'ai'>('dashboard');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [studentsQuickAction, setStudentsQuickAction] = useState<'none' | 'missing-score' | 'attendance-risk'>('none');
   const [studentsQuickActionVersion, setStudentsQuickActionVersion] = useState(0);
@@ -427,51 +425,37 @@ export default function App() {
                 active={activeTab === 'dashboard'} 
                 onClick={() => setActiveTab('dashboard')} 
                 icon={<LayoutDashboard />} 
-                label="แดชบอร์ด" 
-              />
-              <NavItem 
-                active={activeTab === 'attendance'} 
-                onClick={() => setActiveTab('attendance')} 
-                icon={<CheckCircle />} 
-                label="การเช็คชื่อ" 
-              />
-              <NavItem 
-                active={activeTab === 'scores'} 
-                onClick={() => setActiveTab('scores')} 
-                icon={<FileText />} 
-                label="คะแนนและเกรด" 
-              />
-              <NavItem 
-                active={activeTab === 'students'} 
-                onClick={() => setActiveTab('students')} 
-                icon={<Users />} 
-                label="นักเรียน" 
+                label="ห้องเรียน" 
               />
               <NavItem 
                 active={activeTab === 'subjects'} 
                 onClick={() => setActiveTab('subjects')} 
-                icon={<FileText />} 
-                label="รายวิชา" 
+                icon={<BookOpen />} 
+                label="รายวิชาของฉัน" 
               />
               <NavItem 
                 active={activeTab === 'assignments'} 
                 onClick={() => setActiveTab('assignments')} 
                 icon={<ClipboardList />} 
-                label="งานมอบหมาย" 
+                label="งานและข้อสอบ" 
               />
-              {profile?.role === 'admin' && (
-                <NavItem 
-                  active={activeTab === 'users'} 
-                  onClick={() => setActiveTab('users')} 
-                  icon={<ShieldCheck />} 
-                  label="การจัดการผู้ใช้" 
-                />
-              )}
+              <NavItem 
+                active={activeTab === 'scores'} 
+                onClick={() => setActiveTab('scores')} 
+                icon={<Trophy />} 
+                label="คะแนน" 
+              />
+              <NavItem 
+                active={activeTab === 'ai'} 
+                onClick={() => setActiveTab('ai')} 
+                icon={<Bot />} 
+                label="AI ผู้ช่วยครู" 
+              />
               <NavItem 
                 active={activeTab === 'settings'} 
                 onClick={() => setActiveTab('settings')} 
                 icon={<Settings />} 
-                label="ตั้งค่าโปรไฟล์" 
+                label="ตั้งค่า" 
               />
             </nav>
           </div>
@@ -626,6 +610,19 @@ export default function App() {
                 onBackToSubject={assignmentFilterSubjectId ? () => setActiveTab('subjects') : undefined}
               />
             )}
+            {activeTab === 'ai' && (
+              <section className="max-w-5xl mx-auto space-y-4">
+                <div className="bg-white rounded-3xl border border-gray-100 p-6 shadow-sm">
+                  <h1 className="text-2xl font-bold text-gray-900 mb-2">AI ผู้ช่วยครู</h1>
+                  <p className="text-sm text-gray-600">
+                    ผู้ช่วยสรุปงานติดตามในห้องเรียนเพื่อช่วยวางแผนการสอนและติดตามนักเรียนได้เร็วขึ้น
+                  </p>
+                </div>
+                <div className="bg-white rounded-3xl border border-gray-100 p-4 sm:p-6 shadow-sm">
+                  <Reminders students={students} attendance={attendance} scores={scores} />
+                </div>
+              </section>
+            )}
             {activeTab === 'users' && profile?.role === 'admin' && (
               <UsersPage users={users} />
             )}
@@ -649,46 +646,9 @@ export default function App() {
               active={activeTab === 'dashboard'}
               onClick={() => setActiveTab('dashboard')}
               icon={<LayoutDashboard />}
-              label="แดชบอร์ด"
+              label="ห้องเรียน"
               badgeCount={reminderCount}
               badgeVariant={dashboardBadgeVariant}
-            />
-            <BottomNavItem
-              active={activeTab === 'attendance'}
-              onClick={() => setActiveTab('attendance')}
-              icon={<CheckCircle />}
-              label="เช็คชื่อ"
-            />
-            <BottomNavItem
-              active={activeTab === 'students'}
-              onClick={() => {
-                setStudentsQuickAction('none');
-                setActiveTab('students');
-              }}
-              icon={<Users />}
-              label="นักเรียน"
-              badges={[
-                {
-                  count: studentsWithoutScoresCount,
-                  variant: 'info',
-                  ariaLabel: 'นักเรียนค้างคะแนน',
-                  onClick: () => {
-                    setStudentsQuickAction('missing-score');
-                    setStudentsQuickActionVersion((v) => v + 1);
-                    setActiveTab('students');
-                  },
-                },
-                {
-                  count: studentsAtRiskAttendanceCount,
-                  variant: 'warning',
-                  ariaLabel: 'นักเรียนเสี่ยงขาดเรียน',
-                  onClick: () => {
-                    setStudentsQuickAction('attendance-risk');
-                    setStudentsQuickActionVersion((v) => v + 1);
-                    setActiveTab('students');
-                  },
-                },
-              ]}
             />
             <BottomNavItem
               active={activeTab === 'subjects'}
@@ -710,9 +670,21 @@ export default function App() {
               active={activeTab === 'assignments'}
               onClick={() => setActiveTab('assignments')}
               icon={<ClipboardList />}
-              label="งาน"
+              label="งานและข้อสอบ"
               badgeCount={assignmentsOverdueCount}
               badgeVariant="warning"
+            />
+            <BottomNavItem
+              active={activeTab === 'scores'}
+              onClick={() => setActiveTab('scores')}
+              icon={<Trophy />}
+              label="คะแนน"
+            />
+            <BottomNavItem
+              active={activeTab === 'ai'}
+              onClick={() => setActiveTab('ai')}
+              icon={<Bot />}
+              label="AI"
             />
             <BottomNavItem
               active={activeTab === 'settings'}
