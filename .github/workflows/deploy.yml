@@ -31,15 +31,15 @@ jobs:
 
       - name: Validate Firebase service account secret
         run: |
-          if [ -z "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" ]; then
-            echo "::error::Missing FIREBASE_SERVICE_ACCOUNT secret. Add full service account JSON in repository secrets."
+          if [ -z "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" ] && [ -z "${{ secrets.FIREBASE_SERVICE_ACCOUNT_CLASSROOM_KD }}" ]; then
+            echo "::error::Missing Firebase service account secret. Add FIREBASE_SERVICE_ACCOUNT or FIREBASE_SERVICE_ACCOUNT_CLASSROOM_KD in repository secrets."
             exit 1
           fi
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
-          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT || secrets.FIREBASE_SERVICE_ACCOUNT_CLASSROOM_KD }}
 
       - name: Deploy to Firebase Hosting
         run: npx --yes firebase-tools@15.9.0 deploy --only hosting --project classroom-kd --non-interactive
