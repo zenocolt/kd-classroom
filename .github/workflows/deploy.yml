@@ -9,6 +9,9 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
 
     steps:
       - name: Checkout
@@ -26,10 +29,17 @@ jobs:
       - name: Build app
         run: npm run build
 
-      - name: Write Firebase service account
-        run: printf '%s' '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > "$RUNNER_TEMP/firebase-service-account.json"
+      - name: Validate Firebase service account secret
+        run: |
+          if [ -z "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" ]; then
+            echo "::error::Missing FIREBASE_SERVICE_ACCOUNT secret. Add full service account JSON in repository secrets."
+            exit 1
+          fi
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
 
       - name: Deploy to Firebase Hosting
-        env:
-          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-service-account.json
-        run: npx firebase-tools deploy --only hosting --project classroom-kd --non-interactive
+        run: npx --yes firebase-tools@15.9.0 deploy --only hosting --project classroom-kd --non-interactive
